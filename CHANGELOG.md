@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4](https://github.com/davehorner/jetkvm_control/compare/v0.1.3...v0.1.4) - 2025-03-04
+
+### Added
+
+- *(keyboard)* add send_key_combinations API and Lua binding
+
 ## [0.1.3](https://github.com/davehorner/jetkvm_control/compare/v0.1.2...v0.1.3) - 2025-03-03
 
 ### Other
