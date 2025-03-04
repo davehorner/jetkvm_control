@@ -12,6 +12,12 @@ authors = ["David Horner"]
 default = ["lua"]
 lua = ["mlua"]
 
+[[bin]]
+name = "jetkvm_control_svr"
+path = "src/jetkvm_control_svr.rs"
+[[bin]]
+name = "jetkvm_svr_client"
+path = "src/jetkvm_svr_client.rs"
 
 [dependencies]
 anyhow = "1.0.95"
@@ -19,8 +25,8 @@ base64 = "0.22.1"
 clap = { version = "4.5.31", features = ["derive"] }
 config = "0.15.8"
 dotenv = "0.15.0"
-reqwest = { version = "0.12.12", features = ["cookies", "json"] }
-serde = "1.0.217"
+reqwest = { version = "0.12.12", features = ["blocking", "cookies", "json"] }
+serde = { version = "1.0.217", features = ["derive"] }
 serde_json = "1.0.138"
 tokio = "1.43.0"
 toml = "0.8.20"
@@ -28,6 +34,15 @@ tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 webrtc = "0.12.0"
 mlua = { version = "0.10.1", features = ["lua54", "vendored", "async", "send", "serialize"], optional = true }
+rand = "0.9.0"
+rustls-pemfile = "2.2.0"
+hex = "0.4.3"
+tokio-rustls = "0.26.2"
+hmac = "0.12.1"
+rustls = "0.23.23"
+rcgen = "0.13.2"
+sha2 = "0.10.8"
+windows = { version = "0.60.0", features = ["Win32", "Win32_System", "Win32_System_Diagnostics", "Win32_System_Diagnostics_Debug", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Kernel", "Win32_System_Memory", "Win32_System_ProcessStatus", "Win32_System_SystemInformation", "Win32_System_SystemServices", "Win32_System_Threading", "Win32_System_WindowsProgramming", "Win32_UI", "Win32_UI_WindowsAndMessaging"] }
 
 [dev-dependencies]
 regex = "1.11.1"

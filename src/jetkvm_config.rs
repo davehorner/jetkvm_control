@@ -1,15 +1,18 @@
 use anyhow::{Context, Result};
 use serde::Deserialize;
+use serde::Serialize;
 use std::env;
 use std::fs;
 use std::path::Path;
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct JetKvmConfig {
     pub host: String,
     pub port: String,
     pub api: String,
     pub password: String,
+    #[serde(default)] // Ensures `no_auto_logout` defaults to false if missing
+    pub no_auto_logout: bool,
 }
 
 impl Default for JetKvmConfig {
@@ -19,6 +22,7 @@ impl Default for JetKvmConfig {
             port: "80".into(),
             api: "/webrtc/session".into(),
             password: "".into(),
+            no_auto_logout: false,
         }
     }
 }

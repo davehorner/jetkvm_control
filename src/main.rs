@@ -123,11 +123,13 @@ async fn main() -> AnyResult<()> {
 
         // Wrap the client in an Arc/Mutex for the Lua engine.
         let client_arc = Arc::new(Mutex::new(client));
-        let lua_engine = LuaEngine::new(client_arc);
+        let lua_engine = LuaEngine::new(client_arc.clone());
         lua_engine.register_builtin_functions()?;
 
         lua_engine.exec_script(&script).await?;
         info!("Lua script executed successfully.");
+        // Logout after Lua execution
+        client_arc.lock().await.logout().await?;
     }
 
     // Normal mode: if the "lua" feature is not enabled, perform normal actions.
@@ -142,6 +144,8 @@ async fn main() -> AnyResult<()> {
         info!("Device ID: {:?}", device_id);
         let edid = rpc_get_edid(&client).await;
         info!("EDID: {:?}", edid);
+        // Logout after Lua execution
+        client.logout().await?;
     }
 
     Ok(())
