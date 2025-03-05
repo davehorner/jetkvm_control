@@ -18,6 +18,9 @@ path = "src/jetkvm_control_svr.rs"
 [[bin]]
 name = "jetkvm_svr_client"
 path = "src/jetkvm_svr_client.rs"
+[[bin]]
+name = "jetkvm_control_svr_client"
+path = "src/jetkvm_control_svr_client.rs"
 
 [dependencies]
 anyhow = "1.0.95"

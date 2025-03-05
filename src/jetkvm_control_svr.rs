@@ -17,6 +17,10 @@ use rustls::crypto::CryptoProvider;
 use tokio::io::AsyncBufReadExt;
 use hex;
 use tokio_rustls::server::TlsStream;
+
+mod platform_util;
+pub use platform_util::*;
+
 #[cfg(target_os = "windows")]
 mod windows_util {
     use windows::Win32::Foundation::HWND;
@@ -56,6 +60,7 @@ extern "system" {
         ReturnLength: *mut u32,
     ) -> i32;
 }
+
 
 #[derive(Serialize, serde::Deserialize, Debug)]
 struct ActiveProcessInfo {
@@ -393,11 +398,11 @@ async fn process_request(
                 success: true,
                 data: match request.command.as_str() {
                     "active_process" => serde_json::from_str(
-                        &windows_util::active_process().unwrap_or("{}".to_string())
+                        &platform_util::active_process().unwrap_or("{}".to_string())
                     ).unwrap_or(serde_json::json!({})),
 
                     "active_window" => serde_json::from_str(
-                        &windows_util::active_window().unwrap_or("{}".to_string())
+                        &platform_util::active_window().unwrap_or("{}".to_string())
                     ).unwrap_or(serde_json::json!({})),
 
                     _ => serde_json::json!({ "message": "Command executed successfully" }),
