@@ -43,6 +43,7 @@ struct RpcRequest {
 #[derive(Serialize, Deserialize, Debug)]
 struct RpcResponse {
     success: bool,
+    #[serde(default)]
     data: serde_json::Value,
 }
 
@@ -173,14 +174,18 @@ if success then
     for key, value in pairs(result) do
         print(key .. ":", value)
     end
-
-    -- Accessing specific properties directly
     print("\n--- Direct Access ---")
-    print("Window Title:", result.window_title)
-    print("Process ID:", result.process_id)
-    print("Executable Name:", result.executable_name)
-    print("Window Size: " .. result.width .. "x" .. result.height)
-    print("Window Position: (" .. result.window_x .. ", " .. result.window_y .. ")")
+   print("Window Title:", result.window_title or "N/A")
+
+    local result = send_command("active_process")  -- JSON automatically converted to Lua table
+    -- Accessing specific properties directly
+   print("\n--- Direct Access ---")
+   print("Process ID:", result.process_id or "N/A")
+   print("Executable Name:", result.executable_name or "N/A")
+   print("Window X:", result.window_x or "N/A")
+   print("Window Y:", result.window_y or "N/A")
+   print("Width:", result.width or "N/A")
+   print("Height:", result.height or "N/A") 
 
 else
     print("Failed to connect")
