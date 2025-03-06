@@ -1466,10 +1466,54 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "clap",
+ "hex",
+ "hmac",
+ "lazy_static",
+ "mlua",
+ "rand 0.9.0",
+ "rcgen",
+ "regex",
+ "reqwest",
+ "rustls",
+ "rustls-pemfile",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+ "tokio-rustls",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+ "webrtc",
+ "windows",
+]
+
+[[package]]
+name = "jetkvm_control_platform"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "mlua",
+ "serde",
+ "serde_json",
+ "tracing",
+ "tracing-subscriber",
+ "windows",
+]
+
+[[package]]
+name = "jetkvm_control_svr"
+version = "0.1.3"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "clap",
  "config",
  "dotenv",
  "hex",
  "hmac",
+ "jetkvm_control",
+ "jetkvm_control_platform",
  "mlua",
  "rand 0.9.0",
  "rcgen",

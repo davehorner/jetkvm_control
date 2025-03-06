@@ -34,6 +34,9 @@ struct CliConfig {
     /// Path to the Lua script to execute.
     #[arg(required = true, index = 1)]
     lua_script: String,
+
+    #[arg(long, default_value = "cert.pem")]
+    ca_cert_path: Option<String>,
 }
 
 /// Loads configuration from file (or uses the default) and then applies CLI overrides.
@@ -58,14 +61,20 @@ fn load_and_override_config(cli_config: &CliConfig) -> JetKvmConfig {
     if let Some(password) = &cli_config.password {
         config.password = password.clone();
     }
+    if let Some(ca_cert_path) = &cli_config.ca_cert_path {
+        config.ca_cert_path = ca_cert_path.clone();
+    }
     config
 }
 
 #[tokio::main]
 async fn main() -> AnyResult<()> {
+   // Install the default crypto provider for rustls
+    rustls::crypto::aws_lc_rs::default_provider().install_default();  
     // Parse CLI arguments.
     let cli_config = CliConfig::parse();
     info!("CLI config provided: {:?}", cli_config);
+
 
     // Build a filter string: by default, disable webrtc_sctp logging,
     // but if verbose is enabled, include all logs.
@@ -103,7 +112,7 @@ async fn main() -> AnyResult<()> {
     }
 
     // Create and connect the client.
-    let mut client = JetKvmRpcClient::new(config);
+    let mut client = JetKvmRpcClient::new(config.clone());
     if let Err(err) = client.connect().await {
         error!("Failed to connect to RPC server: {:?}", err);
         std::process::exit(1);
@@ -125,6 +134,13 @@ async fn main() -> AnyResult<()> {
         let client_arc = Arc::new(Mutex::new(client));
         let lua_engine = LuaEngine::new(client_arc.clone());
         lua_engine.register_builtin_functions()?;
+
+        let config_clone = config.clone(); // ✅ Clone before moving
+
+        lua_engine.lua().globals().set("HOST", config_clone.host)?;
+        lua_engine.lua().globals().set("PORT", config_clone.port)?;
+        lua_engine.lua().globals().set("PASSWORD", config_clone.password)?;
+        lua_engine.lua().globals().set("CERT_PATH", config_clone.ca_cert_path)?;
 
         lua_engine.exec_script(&script).await?;
         info!("Lua script executed successfully.");

@@ -287,61 +287,177 @@ pub async fn send_windows_key(client: &crate::jetkvm_rpc_client::JetKvmRpcClient
 /// - `keys`: A list of key codes to be pressed.
 /// - `hold`: The duration (in milliseconds) to hold the key press (defaults to 100 ms).
 /// - `wait`: The delay (in milliseconds) after releasing the keys before proceeding to the next combination (defaults to 10 ms).
-#[derive(Debug)]
-struct KeyCombo {
-    modifier: u64,
-    keys: Vec<u8>,
-    hold: u64, // how long to hold the key press (in ms), defaults to 100 ms
-    wait: u64, // delay after releasing keys before next combo (in ms), defaults to 10 ms
+/// 
+/// 
+#[derive(Debug, Clone)]
+pub struct KeyCombo {
+    pub modifier: u8,
+    pub keys: Vec<u8>,
+    pub hold_keys: bool,
+    pub hold_modifiers: bool,
+    pub hold: Option<u64>,
+    pub wait: Option<u64>,
+    pub instant_release: Option<bool>,
+    pub clear_keys: Option<bool>,
 }
 
-/// Sends a series of key combinations to the remote KVM device via RPC.
-///
-/// This asynchronous function processes each key combination in the provided list by:
-/// 1. Sending a `keyboardReport` RPC that presses the specified keys along with any modifier keys.
-/// 2. Waiting for the duration specified in `combo.hold` to simulate holding the keys down.
-/// 3. Sending another `keyboardReport` RPC to release all keys.
-/// 4. Waiting for the duration specified in `combo.wait` before moving to the next combination.
-///
-/// # Parameters
-/// - `client`: A reference to the `JetKvmRpcClient` that is used to send RPC commands.
-/// - `combos`: A vector of `KeyCombo` structs, where each struct contains:
-///   - `modifier`: The modifier key(s) (like Ctrl, Alt, etc.) to apply.
-///   - `keys`: The list of keys to be pressed.
-///   - `hold`: The duration (in milliseconds) to hold the keys down.
-///   - `wait`: The duration (in milliseconds) to wait after releasing the keys.
-///
-/// # Returns
-/// Returns `Ok(())` if all key combinations are successfully processed, or an error if any RPC call fails.
-async fn send_key_combinations(client: &JetKvmRpcClient, combos: Vec<KeyCombo>) -> AnyResult<()> {
-    for combo in combos {
-        // Press the keys with the specified modifier.
-        client
-            .send_rpc(
-                "keyboardReport",
-                json!({
-                    "modifier": combo.modifier,
-                    "keys": combo.keys,
-                }),
-            )
-            .await?;
-        // Hold the key for the specified duration.
-        sleep(Duration::from_millis(combo.hold)).await;
-        // Release all keys.
-        client
-            .send_rpc(
-                "keyboardReport",
-                json!({
-                    "modifier": 0,
-                    "keys": [],
-                }),
-            )
-            .await?;
-        // Wait after releasing keys before proceeding.
-        sleep(Duration::from_millis(combo.wait)).await;
+use std::collections::HashSet;
+use tokio::time;
+pub async fn send_key_combinations(
+    client: &JetKvmRpcClient,
+    key_combos: Vec<KeyCombo>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let mut active_modifiers: u8 = 0;
+    let mut active_keys: HashSet<u8> = HashSet::new();
+    let mut hold_modifiers: HashSet<u8> = HashSet::new();
+    let mut hold_keys: HashSet<u8> = HashSet::new();
+
+    for combo in key_combos {
+        tracing::debug!(
+            "[DEBUG] Processing combo -> Modifier: {:#04x}, Keys: {:?}, Hold Keys: {}, Hold Modifiers: {}, Hold: {:?}, Wait: {:?}, Instant Release: {:?}",
+            combo.modifier,
+            combo.keys,
+            combo.hold_keys,
+            combo.hold_modifiers,
+            combo.hold,
+            combo.wait,
+            combo.instant_release.unwrap_or(false)
+        );
+
+        if combo.hold_modifiers {
+            hold_modifiers.insert(combo.modifier);
+        }
+
+        if combo.hold_keys {
+            hold_keys.extend(&combo.keys);
+        }
+
+        active_modifiers |= combo.modifier;
+        active_keys.extend(&combo.keys);
+
+
+
+if combo.clear_keys.unwrap_or(false) {
+        // Immediately clear all keys and force modifiers to zero.
+    active_keys.clear();
+    active_modifiers = 0;
+    tracing::debug!(
+        "[DEBUG] clear_keys flag active. Forcing release of all keys and modifiers."
+    );
+    client
+        .send_rpc(
+            "keyboardReport",
+            json!({
+                "modifier": active_modifiers,
+                "keys": Vec::<u8>::new(),
+            }),
+        )
+        .await?;
+
+    if let Some(wait_duration) = combo.wait {
+        tracing::debug!("[DEBUG] Waiting {}ms after clear_keys combo...", wait_duration);
+        time::sleep(Duration::from_millis(wait_duration)).await;
     }
+    continue;
+}
+
+
+
+        tracing::debug!(
+            "[DEBUG] Sending Key Press - Modifier: {:#04x}, Keys: {:?}",
+            active_modifiers,
+            active_keys
+        );
+
+        client
+            .send_rpc(
+                "keyboardReport",
+                json!({
+                    "modifier": active_modifiers,
+                    "keys": active_keys.clone().into_iter().collect::<Vec<u8>>(),
+                }),
+            )
+            .await?;
+
+
+if let Some(hold_duration) = combo.hold {
+    tracing::debug!(
+        "[DEBUG] Holding keys for {}ms - Modifier: {:#04x}, Keys: {:?}",
+        hold_duration,
+        active_modifiers,
+        active_keys
+    );
+    time::sleep(Duration::from_millis(hold_duration)).await;
+
+    // If the combo did NOT specify to hold the keys, remove them from the active set.
+    if !combo.hold_keys {
+        let keys_to_remove: HashSet<u8> = combo.keys.iter().cloned().collect();
+        active_keys = active_keys.difference(&keys_to_remove).cloned().collect();
+    }
+    // For modifiers, we still check the hold_modifiers set.
+    if !hold_modifiers.contains(&combo.modifier) {
+        active_modifiers &= !combo.modifier;
+    }
+
+    tracing::debug!(
+        "[DEBUG] Releasing keys after hold duration. New Modifier: {:#04x}, New Keys: {:?}",
+        active_modifiers,
+        active_keys
+    );
+
+    client
+        .send_rpc(
+            "keyboardReport",
+            json!({
+                "modifier": active_modifiers,
+                "keys": active_keys.clone().into_iter().collect::<Vec<u8>>(),
+            }),
+        )
+        .await?;
+}
+
+
+        if combo.instant_release.unwrap_or(false) {
+            let keys_to_release: HashSet<u8> = combo.keys.iter().cloned().collect();
+            active_keys = active_keys.difference(&keys_to_release).cloned().collect();
+
+            if active_keys.is_empty() && !hold_modifiers.contains(&combo.modifier) {
+                active_modifiers &= !combo.modifier;
+            }
+
+            tracing::debug!(
+                "[DEBUG] Instant Release activated. Releasing keys: {:?}, New Modifier: {:#04x}",
+                keys_to_release,
+                active_modifiers
+            );
+
+            client
+                .send_rpc(
+                    "keyboardReport",
+                    json!({
+                        "modifier": active_modifiers,
+                        "keys": active_keys.clone().into_iter().collect::<Vec<u8>>(),
+                    }),
+                )
+                .await?;
+        }
+
+        if let Some(wait_duration) = combo.wait {
+            tracing::debug!("[DEBUG] Waiting {}ms before processing next key combo...", wait_duration);
+            time::sleep(Duration::from_millis(wait_duration)).await;
+        }
+    }
+
+    tracing::debug!(
+        "[DEBUG] Finished processing all key combos. Final Held Keys: {:?}, Final Held Modifier: {:#04x}",
+        active_keys,
+        active_modifiers
+    );
+
     Ok(())
 }
+
+
 
 /// Registers keyboard functions to the provided Lua context.
 #[cfg(feature = "lua")]
@@ -439,34 +555,42 @@ pub fn register_lua(lua: &Lua, client: Arc<Mutex<JetKvmRpcClient>>) -> LuaResult
     };
     lua.globals().set("send_text", send_text_fn)?;
 
-    let send_key_combinations_fn = {
-        let value = client.clone();
-        // The async function returns a Result; we unwrap it here.
-        lua.create_async_function(move |_, combos: mlua::Table| {
-            let client = value.clone();
-            async move {
-                let mut key_combos = Vec::new();
-                // Expecting combos to be an array of tables.
-                for pair in combos.sequence_values::<mlua::Table>() {
-                    let combo_table = pair?;
-                    let modifier: u64 = combo_table.get("modifier")?;
-                    let keys: Vec<u8> = combo_table.get("keys")?;
-                    // Optional fields: default to hold = 100 ms and wait = 10 ms.
-                    let hold: u64 = combo_table.get("hold").unwrap_or(100);
-                    let wait: u64 = combo_table.get("wait").unwrap_or(10);
-                    key_combos.push(KeyCombo {
-                        modifier,
-                        keys,
-                        hold,
-                        wait,
-                    });
-                }
-                send_key_combinations(&*client.lock().await, key_combos)
-                    .await
-                    .map_err(mlua::Error::external)
-            }
-        })
-    }?;
+    
+    let send_key_combinations_fn = lua.create_async_function(move |_, combos: mlua::Table| {
+    let client = client.clone();
+    async move {
+        let mut key_combos = Vec::new();
+
+        for pair in combos.sequence_values::<mlua::Table>() {
+            let combo_table = pair?;
+            
+            let modifier: u8 = combo_table.get("modifier")?;
+            let keys: Vec<u8> = combo_table.get("keys")?;
+            let hold_keys: bool = combo_table.get("hold_keys").unwrap_or(false); // ✅ Fixed type
+            let hold: Option<u64> = combo_table.get("hold").ok();
+            let wait: Option<u64> = combo_table.get("wait").ok();
+            let hold_modifiers: bool = combo_table.get("hold_modifiers").unwrap_or(false); // ✅ Fixed type
+            let instant_release: bool = combo_table.get("instant_release").unwrap_or(false); // ✅ Fixed type
+            let clear_keys: bool = combo_table.get("clear_keys").unwrap_or(false);
+
+            key_combos.push(KeyCombo {
+                modifier,
+                keys,
+                hold_keys,
+                hold,
+                wait,
+                hold_modifiers,
+                instant_release: Some(instant_release),
+                clear_keys: Some(clear_keys),
+            });
+        }
+
+        send_key_combinations(&*client.lock().await, key_combos)
+            .await
+            .map_err(mlua::Error::external)
+    }
+})?;
+
 
     lua.globals()
         .set("send_key_combinations", send_key_combinations_fn)?;

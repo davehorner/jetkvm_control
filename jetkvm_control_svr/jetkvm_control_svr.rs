@@ -147,41 +147,71 @@ fn compute_hmac(password: &str, challenge: u64, command: &str) -> String {
 }
 
 async fn handle_client(
-    socket: TlsStream<TcpStream>, 
-    password: Arc<String>
+    socket: TlsStream<TcpStream>,
+    password: Arc<String>,
 ) -> std::io::Result<()> {
-    use tokio::io::AsyncReadExt; // Ensure AsyncRead is in scope
-    
-    let mut reader = BufReader::new(socket); // Use tokio::io::BufReader
+    let mut reader = BufReader::new(socket);
     let mut line = String::new();
 
-    // Generate and send challenge
+    // ✅ Generate and send JSON challenge response
     let challenge: u64 = rand::thread_rng().gen();
-    let challenge_msg = format!("CHALLENGE:{}\n", challenge);
+    let challenge_response = serde_json::json!({
+        "challenge": challenge
+    });
+    let challenge_msg = serde_json::to_string(&challenge_response).unwrap() + "\n";
     reader.get_mut().write_all(challenge_msg.as_bytes()).await?;
     reader.get_mut().flush().await?;
 
+    // ✅ Read authentication request
+    line.clear();
+    let bytes_read = reader.read_line(&mut line).await?;
+    if bytes_read == 0 {
+        println!("Client disconnected (EOF)");
+        return Ok(());
+    }
+
+    // ✅ Parse authentication request as JSON
+    if let Ok(request) = serde_json::from_str::<RpcRequest>(line.trim()) {
+        let expected_hmac = compute_hmac(&password, challenge, &request.command);
+
+        if request.hmac != expected_hmac {
+            let auth_response = serde_json::json!({
+                "success": false,
+                "error": "Authentication failed"
+            });
+            let response_json = serde_json::to_string(&auth_response).unwrap() + "\n";
+            reader.get_mut().write_all(response_json.as_bytes()).await?;
+            reader.get_mut().flush().await?;
+            return Ok(()); // Reject connection on failed authentication
+        }
+
+        let auth_response = serde_json::json!({
+            "success": true,
+            "message": "Authentication successful"
+        });
+        let response_json = serde_json::to_string(&auth_response).unwrap() + "\n";
+        reader.get_mut().write_all(response_json.as_bytes()).await?;
+        reader.get_mut().flush().await?;
+    } else {
+        println!("Error parsing authentication request");
+        return Ok(());
+    }
+
+    // ✅ Proceed to normal request handling after authentication
     loop {
         line.clear();
         let bytes_read = reader.read_line(&mut line).await?;
-
         if bytes_read == 0 {
             println!("Client disconnected (EOF)");
             break;
         }
 
-        let json_part = line.trim(); // Trim whitespace/newline
-        if json_part.is_empty() {
-            continue;
-        }
-
-        println!("Received JSON: {}", json_part);
-
-        process_request(reader.get_mut(), &password, challenge, json_part).await?;
+        process_request(reader.get_mut(), &password, challenge, line.trim()).await?;
     }
 
     Ok(())
 }
+
 
 async fn process_request(
     socket: &mut TlsStream<TcpStream>,

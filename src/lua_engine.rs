@@ -8,6 +8,7 @@ use tokio::sync::Mutex;
 use tokio::time::sleep;
 use tokio::time::Duration;
 
+use crate::jetkvm_control_svr_client;
 use crate::jetkvm_rpc_client::JetKvmRpcClient;
 use crate::keyboard;
 use crate::mouse;
@@ -27,18 +28,26 @@ impl LuaEngine {
     }
 
     pub fn register_delay(lua: &Lua) -> LuaResult<()> {
-        let delay_fn = lua.create_async_function(|_, millis: u64| async move {
+            let delay_fn = lua.create_function(|_, millis: u64| {
+        std::thread::sleep(Duration::from_millis(millis)); // ⬅️ Now blocking
+        Ok(())
+    })?;
+    lua.globals().set("delay", delay_fn)?;
+    Ok(())
+       /* let delay_fn = lua.create_async_function(|_, millis: u64| async move {
             sleep(Duration::from_millis(millis)).await;
             Ok(())
         })?;
         lua.globals().set("delay", delay_fn)?;
         Ok(())
+        */
     }
 
     /// Registers built-in functions from other modules (e.g., keyboard and mouse) to the Lua context.
     pub fn register_builtin_functions(&self) -> LuaResult<()> {
         keyboard::register_lua(&self.lua, self.client.clone())?;
         mouse::register_lua(&self.lua, self.client.clone())?;
+        jetkvm_control_svr_client::register_lua(&self.lua)?;
         Self::register_delay(&self.lua)?;
         Ok(())
     }

@@ -5,12 +5,20 @@ use std::env;
 use std::fs;
 use std::path::Path;
 
+
+fn default_cert_path() -> String {
+    "cert.pem".to_string()
+}
+
+
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct JetKvmConfig {
     pub host: String,
     pub port: String,
     pub api: String,
     pub password: String,
+    #[serde(default = "default_cert_path")]
+    pub ca_cert_path: String,
     #[serde(default)] // Ensures `no_auto_logout` defaults to false if missing
     pub no_auto_logout: bool,
 }
@@ -22,6 +30,7 @@ impl Default for JetKvmConfig {
             port: "80".into(),
             api: "/webrtc/session".into(),
             password: "".into(),
+            ca_cert_path: "cert.pem".into(),
             no_auto_logout: false,
         }
     }
