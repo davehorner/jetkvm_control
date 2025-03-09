@@ -70,7 +70,8 @@ fn load_and_override_config(cli_config: &CliConfig) -> JetKvmConfig {
 #[tokio::main]
 async fn main() -> AnyResult<()> {
    // Install the default crypto provider for rustls
-    rustls::crypto::aws_lc_rs::default_provider().install_default();  
+   #[cfg(feature = "tls")]
+   rustls::crypto::aws_lc_rs::default_provider().install_default().ok();  
     // Parse CLI arguments.
     let cli_config = CliConfig::parse();
     info!("CLI config provided: {:?}", cli_config);

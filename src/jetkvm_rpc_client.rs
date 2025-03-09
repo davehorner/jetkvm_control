@@ -6,8 +6,8 @@ use base64::{engine::general_purpose, Engine as _};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::sync::{atomic::AtomicUsize, Arc};
-use tokio::{sync::Mutex, task::spawn_blocking};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use tokio::time::Duration;
 use tracing::debug;
 use webrtc::{
@@ -18,9 +18,6 @@ use webrtc::{
         sdp::{sdp_type::RTCSdpType, session_description::RTCSessionDescription},
     },
 };
-
-/// A global atomic for unique JSON-RPC request IDs.
-static REQUEST_COUNTER: AtomicUsize = AtomicUsize::new(1);
 
 #[derive(Serialize, Deserialize)]
 struct WebRTCSessionRequest {

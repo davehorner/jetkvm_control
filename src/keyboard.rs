@@ -1,8 +1,6 @@
 use crate::jetkvm_rpc_client::JetKvmRpcClient;
 use anyhow::Result as AnyResult;
 use serde_json::{json, Value};
-use std::sync::Arc;
-use tokio::sync::Mutex;
 use tokio::time::{sleep, Duration};
 use tracing::debug;
 
@@ -462,6 +460,11 @@ if let Some(hold_duration) = combo.hold {
 /// Registers keyboard functions to the provided Lua context.
 #[cfg(feature = "lua")]
 use mlua::prelude::*;
+#[cfg(feature = "lua")]
+use std::sync::Arc;
+#[cfg(feature = "lua")]
+use tokio::sync::Mutex;
+
 #[cfg(feature = "lua")]
 pub fn register_lua(lua: &Lua, client: Arc<Mutex<JetKvmRpcClient>>) -> LuaResult<()> {
     let send_return_fn = {

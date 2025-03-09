@@ -5,7 +5,6 @@ use anyhow::Result as AnyResult;
 use mlua::prelude::*;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tokio::time::sleep;
 use tokio::time::Duration;
 
 use crate::jetkvm_control_svr_client;

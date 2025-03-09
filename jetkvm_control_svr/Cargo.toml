@@ -16,8 +16,12 @@ lua = ["mlua"]
 name = "jetkvm_control_svr"
 path = "jetkvm_control_svr.rs"
 
+[[example]]
+name = "jetkvm_control_svr_client"
+path = "../src/jetkvm_control_svr_client.rs"
+
 [dependencies]
-jetkvm_control = { path = "../" }
+jetkvm_control = { path = "../", features=["tls"] }
 jetkvm_control_platform = { path = "../jetkvm_control_platform" }
 anyhow = "1.0.95"
 base64 = "0.22.1"

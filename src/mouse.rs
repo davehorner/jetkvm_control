@@ -1,8 +1,6 @@
 use crate::jetkvm_rpc_client::JetKvmRpcClient;
 use anyhow::Result as AnyResult;
 use serde_json::{json, Value};
-use std::sync::Arc;
-use tokio::sync::Mutex;
 use tokio::time::{sleep, Duration};
 
 /// Sends an absolute mouse report with x, y coordinates and button state.
@@ -208,6 +206,10 @@ pub async fn rpc_left_click_and_drag_to_center(
 /// Registers mouse functions to the provided Lua context.
 #[cfg(feature = "lua")]
 use mlua::prelude::*;
+#[cfg(feature = "lua")]
+use std::sync::Arc;
+#[cfg(feature = "lua")]
+use tokio::sync::Mutex;
 #[cfg(feature = "lua")]
 pub fn register_lua(lua: &Lua, client: Arc<Mutex<JetKvmRpcClient>>) -> LuaResult<()> {
     let left_click_fn = {

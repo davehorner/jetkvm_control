@@ -43,7 +43,9 @@ impl RpcClient {
         self.dc.on_message(Box::new(move |msg: DataChannelMessage| {
             let pending_clone = pending.clone(); // Clone it before moving it inside async
 
-            Box::pin(async move {
+            Box::pin({
+            let value = notification_callback.clone();
+            async move {
                 let text = String::from_utf8(msg.data.to_vec()).unwrap_or_default();
 
                 match serde_json::from_str::<Value>(&text) {
@@ -59,12 +61,25 @@ impl RpcClient {
                             }
                         } else {
                             debug!("msg: {}", text);
+                                                   // This branch handles notifications (no "id" field).
+                        if let Some(callback) = value.as_ref() {
+                            if let Some(method) = v.get("method").and_then(|m| m.as_str()) {
+                                // Extract "params" if available, defaulting to Null.
+                                let params = v.get("params").cloned().unwrap_or(Value::Null);
+                                callback(method, &params);
+                            } else {
+                                debug!("Notification received but missing 'method' field: {}", text);
+                            }
+                        } else {
+                            debug!("Notification received (no callback installed): {}", text);
+                        }
                         }
                     }
                     Err(e) => {
                         error!("❌ Invalid JSON Received: {}: {:?}", text, e);
                     }
                 }
+            }
             })
         }));
     }
