@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/davehorner/jetkvm_control/compare/jetkvm_control-v0.1.3...jetkvm_control-v0.2.0) - 2025-03-09
+
+### Added
+
+- initial release of jetkvm_control_svr with TLS and HMAC authentication
+- *(keyboard)* add send_key_combinations API and Lua binding
+
 ## [0.1.3](https://github.com/davehorner/jetkvm_control/compare/v0.1.2...v0.1.3) - 2025-03-03
 
 ### Other
