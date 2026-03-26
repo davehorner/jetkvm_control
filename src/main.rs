@@ -25,9 +25,11 @@ struct CliConfig {
     #[arg(short = 'P', long)]
     password: Option<String>,
 
-    /// Enable verbose logging (include logs from webrtc_sctp).
-    #[arg(short = 'v', long)]
-    verbose: bool,
+    /// Increase log verbosity. Default output is warnings and errors only.
+    /// Use -v for debug logging (WebRTC internals silenced), or -vv for
+    /// full debug output including WebRTC internals.
+    #[arg(short = 'v', long, action = clap::ArgAction::Count)]
+    verbose: u8,
 
     // When the "lua" feature is enabled, the first positional argument is the Lua script path.
     #[cfg(feature = "lua")]
@@ -41,18 +43,42 @@ struct CliConfig {
     /// Initialize or edit the jetkvm_control.toml interactively.
     #[arg(short = 'c', long = "config_init")]
     config_init: bool,
-    
+
+    /// Path to a specific jetkvm_control.toml config file.
+    /// When provided, this takes precedence over the default search locations
+    /// (current directory, CARGO_MANIFEST_DIR, /etc/jetkvm_control/).
+    #[arg(short = 'f', long = "config")]
+    config_path: Option<String>,
 }
 
 /// Loads configuration from file (or uses the default) and then applies CLI overrides.
+///
+/// If `--config <path>` was provided, loads exclusively from that path (errors are fatal).
+/// Otherwise, falls back to the default search order: current directory, CARGO_MANIFEST_DIR,
+/// then system-wide (/etc/jetkvm_control/). CLI flags (-H, -P, etc.) override any file values.
 fn load_and_override_config(cli_config: &CliConfig) -> JetKvmConfig {
-    let mut config = JetKvmConfig::load().unwrap_or_else(|err| {
-        warn!(
-            "Failed to load jetkvm_control.toml ({}). Using default configuration.",
-            err
-        );
-        (JetKvmConfig::default(),"".to_string(),true)
-    });
+    let mut config = if let Some(path) = &cli_config.config_path {
+        // Explicit --config path: load from that file or fail with a clear error.
+        match JetKvmConfig::load_from_file(path) {
+            Ok(cfg) => {
+                println!("✅ Loaded config from: {}", path);
+                (cfg, path.clone(), true)
+            }
+            Err(err) => {
+                eprintln!("Error: Failed to load config from '{}': {}", path, err);
+                std::process::exit(1);
+            }
+        }
+    } else {
+        // No explicit path: search default locations.
+        JetKvmConfig::load().unwrap_or_else(|err| {
+            warn!(
+                "Failed to load jetkvm_control.toml ({}). Using default configuration.",
+                err
+            );
+            (JetKvmConfig::default(), "".to_string(), true)
+        })
+    };
 
     if let Some(host) = &cli_config.host {
         config.0.host = host.clone();
@@ -97,20 +123,7 @@ async fn main() -> AnyResult<()> {
         }
     }
 
-    // Build a filter string: by default, disable webrtc_sctp logging,
-    // but if verbose is enabled, include all logs.
-    let filter_directive = if cli_config.verbose {
-        "debug"
-    } else {
-        "debug,\
-         webrtc_sctp=off,\
-         webrtc::peer_connection=off,\
-         webrtc_dtls=off,\
-         webrtc_mdns=off,\
-         hyper_util::client=off,\
-         webrtc_data::data_channel=off,\
-         webrtc_ice=off"
-    };
+    let filter_directive = log_filter_for_verbosity(cli_config.verbose);
 
     // Initialize tracing subscriber with the constructed filter.
     // Create an EnvFilter using the directive.
@@ -212,4 +225,64 @@ info!("Executing Lua script from {}", &cli_config.lua_script);
     }
 
     Ok(())
+}
+
+/// Returns the tracing filter directive string for the given verbosity level.
+///
+/// Verbosity levels:
+///   0 (default) — `warn` with webrtc_ice silenced (quiet output)
+///   1 (-v)      — `debug` with noisy WebRTC modules silenced
+///   2+ (-vv)    — `debug` for all modules including WebRTC internals
+fn log_filter_for_verbosity(verbose: u8) -> &'static str {
+    match verbose {
+        0 => "warn,webrtc_ice=off",
+        1 => "debug,\
+              webrtc_sctp=off,\
+              webrtc::peer_connection=off,\
+              webrtc_dtls=off,\
+              webrtc_mdns=off,\
+              hyper_util::client=off,\
+              webrtc_data::data_channel=off,\
+              webrtc_ice=off",
+        _ => "debug",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Default verbosity (no -v flag) should produce warn-level output
+    /// with webrtc_ice silenced for clean user-facing output.
+    #[test]
+    fn test_verbosity_0_is_warn() {
+        let filter = log_filter_for_verbosity(0);
+        assert!(filter.starts_with("warn"), "default should be warn level");
+        assert!(filter.contains("webrtc_ice=off"), "webrtc_ice should be silenced at default level");
+    }
+
+    /// Single -v should enable debug logging but silence noisy WebRTC modules.
+    #[test]
+    fn test_verbosity_1_is_debug_filtered() {
+        let filter = log_filter_for_verbosity(1);
+        assert!(filter.starts_with("debug"), "-v should enable debug level");
+        assert!(filter.contains("webrtc_sctp=off"), "webrtc_sctp should be silenced");
+        assert!(filter.contains("webrtc_ice=off"), "webrtc_ice should be silenced");
+        assert!(filter.contains("webrtc_dtls=off"), "webrtc_dtls should be silenced");
+        assert!(filter.contains("webrtc_mdns=off"), "webrtc_mdns should be silenced");
+    }
+
+    /// Double -vv should enable full debug output with no modules silenced.
+    #[test]
+    fn test_verbosity_2_is_full_debug() {
+        let filter = log_filter_for_verbosity(2);
+        assert_eq!(filter, "debug", "-vv should be unfiltered debug");
+    }
+
+    /// Higher verbosity levels (e.g., -vvv) should behave the same as -vv.
+    #[test]
+    fn test_verbosity_3_plus_is_full_debug() {
+        assert_eq!(log_filter_for_verbosity(3), "debug");
+        assert_eq!(log_filter_for_verbosity(255), "debug");
+    }
 }

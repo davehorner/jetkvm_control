@@ -89,8 +89,44 @@ impl JetKvmRpcClient {
         peer_connection.set_local_description(offer.clone()).await?;
         debug!("Local SDP Offer set.");
 
+        // 5b. Wait for ICE candidate gathering to complete before sending the offer.
+        //
+        // After setting the local description, the WebRTC stack begins asynchronously
+        // discovering local network candidates (host, srflx, relay) via mDNS/STUN/TURN.
+        // The original code sent the offer immediately — before any candidates were
+        // gathered — which resulted in an SDP with zero ICE candidates. The remote peer
+        // (JetKVM device) would reply with its own candidates, but the local ICE agent
+        // had no local candidates to form pairs with, causing the connection to stall
+        // indefinitely at "pingAllCandidates called with no candidate pairs."
+        //
+        // Fix: use a oneshot channel to block until the ICE gatherer signals Complete,
+        // with a 10-second timeout as a safety net. After this, re-read the local
+        // description — it now contains the gathered `a=candidate` lines.
+        let (gather_tx, gather_rx) = tokio::sync::oneshot::channel::<()>();
+        let gather_tx = std::sync::Mutex::new(Some(gather_tx));
+        peer_connection.on_ice_gathering_state_change(Box::new(move |state| {
+            debug!("ICE gathering state changed: {:?}", state);
+            if state == webrtc::ice_transport::ice_gatherer_state::RTCIceGathererState::Complete {
+                // Signal that gathering is done; .take() ensures we only fire once.
+                if let Some(tx) = gather_tx.lock().unwrap().take() {
+                    let _ = tx.send(());
+                }
+            }
+            Box::pin(async {})
+        }));
+        // Block until gathering finishes or 10s elapses (whichever comes first).
+        let _ = tokio::time::timeout(Duration::from_secs(10), gather_rx).await;
+        debug!("ICE gathering complete (or timed out).");
+
+        // Re-read the local description — it now includes the gathered ICE candidates,
+        // unlike the original `offer` which was captured before gathering started.
+        let local_desc = peer_connection
+            .local_description()
+            .await
+            .ok_or_else(|| anyhow!("No local description after ICE gathering"))?;
+
         // 6. Wrap the offer in JSON.
-        let offer_type_str = match offer.sdp_type {
+        let offer_type_str = match local_desc.sdp_type {
             RTCSdpType::Offer => "offer",
             RTCSdpType::Answer => "answer",
             RTCSdpType::Pranswer => "pranswer",
@@ -106,7 +142,7 @@ impl JetKvmRpcClient {
         }
 
         let local_offer_json = LocalOfferJson {
-            sdp: offer.sdp.clone(),
+            sdp: local_desc.sdp.clone(),
             sdp_type: offer_type_str.to_owned(),
         };
 

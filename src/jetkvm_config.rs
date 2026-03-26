@@ -330,3 +330,129 @@ pub async fn interactive_config_location() -> Result<()> {
 
     Ok(())
 }
+
+/// Unit tests for JetKvmConfig serialization, deserialization, and file I/O.
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    /// Helper: creates a temporary TOML config file with the given content.
+    /// Returns a (path_string, _guard) tuple — the guard keeps the file alive
+    /// until it goes out of scope in the calling test.
+    fn write_temp_config(content: &str) -> (String, tempfile::NamedTempFile) {
+        let mut tmp = tempfile::NamedTempFile::new().expect("create temp file");
+        tmp.write_all(content.as_bytes()).expect("write temp file");
+        let path = tmp.path().to_string_lossy().into_owned();
+        (path, tmp)
+    }
+
+    /// Verify that Default produces the expected zero-value config.
+    #[test]
+    fn test_default_config_values() {
+        let cfg = JetKvmConfig::default();
+        assert_eq!(cfg.host, "");
+        assert_eq!(cfg.port, "80");
+        assert_eq!(cfg.api, "/webrtc/session");
+        assert_eq!(cfg.password, "");
+        assert_eq!(cfg.ca_cert_path, "cert.pem");
+        assert!(!cfg.no_auto_logout);
+    }
+
+    /// Verify session_url() builds the correct HTTP URL from config fields.
+    #[test]
+    fn test_session_url() {
+        let cfg = JetKvmConfig {
+            host: "10.0.0.1".into(),
+            port: "8080".into(),
+            api: "/webrtc/session".into(),
+            ..Default::default()
+        };
+        assert_eq!(cfg.session_url(), "http://10.0.0.1:8080/webrtc/session");
+    }
+
+    /// Verify save → load roundtrip preserves all fields exactly.
+    #[test]
+    fn test_save_and_load_roundtrip() {
+        let cfg = JetKvmConfig {
+            host: "192.168.1.100".into(),
+            port: "443".into(),
+            api: "/api/v2".into(),
+            password: "s3cret".into(),
+            ca_cert_path: "/etc/ssl/cert.pem".into(),
+            no_auto_logout: true,
+        };
+
+        let tmp = tempfile::NamedTempFile::new().expect("create temp file");
+        let path = tmp.path().to_string_lossy().into_owned();
+
+        cfg.save_to_file(&path).expect("save should succeed");
+        let loaded = JetKvmConfig::load_from_file(&path).expect("load should succeed");
+
+        assert_eq!(loaded.host, "192.168.1.100");
+        assert_eq!(loaded.port, "443");
+        assert_eq!(loaded.api, "/api/v2");
+        assert_eq!(loaded.password, "s3cret");
+        assert_eq!(loaded.ca_cert_path, "/etc/ssl/cert.pem");
+        assert!(loaded.no_auto_logout);
+    }
+
+    /// Simulates the --config flag: loading from an arbitrary explicit path.
+    #[test]
+    fn test_load_from_file_explicit_path() {
+        let content = r#"
+host = "192.168.0.100"
+port = "80"
+api = "/webrtc/session"
+password = "testpass"
+"#;
+        let (path, _guard) = write_temp_config(content);
+        let cfg = JetKvmConfig::load_from_file(&path).expect("should load from explicit path");
+
+        assert_eq!(cfg.host, "192.168.0.100");
+        assert_eq!(cfg.port, "80");
+        assert_eq!(cfg.password, "testpass");
+        // ca_cert_path should fall back to the serde default since it's absent from the file.
+        assert_eq!(cfg.ca_cert_path, "cert.pem");
+    }
+
+    /// Loading from a nonexistent path must return an error, not panic.
+    #[test]
+    fn test_load_from_file_missing_path() {
+        let result = JetKvmConfig::load_from_file("/nonexistent/path/config.toml");
+        assert!(result.is_err(), "loading from a missing file should error");
+    }
+
+    /// Malformed TOML must produce a parse error.
+    #[test]
+    fn test_load_from_file_invalid_toml() {
+        let (path, _guard) = write_temp_config("this is not valid toml {{{{");
+        let result = JetKvmConfig::load_from_file(&path);
+        assert!(result.is_err(), "invalid TOML should produce a parse error");
+    }
+
+    /// A TOML file missing required fields (port, api, password) must fail to deserialize.
+    #[test]
+    fn test_load_from_file_missing_required_fields() {
+        let (path, _guard) = write_temp_config(r#"host = "10.0.0.1""#);
+        let result = JetKvmConfig::load_from_file(&path);
+        assert!(result.is_err(), "missing required fields should error");
+    }
+
+    /// Optional fields (ca_cert_path, no_auto_logout) should take their serde defaults
+    /// when omitted from the TOML file.
+    #[test]
+    fn test_load_from_file_optional_fields_default() {
+        let content = r#"
+host = "10.0.0.1"
+port = "80"
+api = "/webrtc/session"
+password = "pass"
+"#;
+        let (path, _guard) = write_temp_config(content);
+        let cfg = JetKvmConfig::load_from_file(&path).expect("should load");
+
+        assert_eq!(cfg.ca_cert_path, "cert.pem", "ca_cert_path should default to cert.pem");
+        assert!(!cfg.no_auto_logout, "no_auto_logout should default to false");
+    }
+}
